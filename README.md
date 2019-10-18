@@ -33,8 +33,8 @@ in {
 rawExample =
   { inputType  = ExampleInput,
     outputType = { greeting: Text },
-	toRequest  = \(input: ExampleInput) ->
-	               Req.addPathPart (input.name) Req.default
+    toRequest  = \(input: ExampleInput) ->
+                   Req.addPathPart (input.name) Req.default
   }
 }
 ```
@@ -63,9 +63,9 @@ fmapExample =
   { parent     = "rawExample",
     outputType = MyOutput,
     f          = \(i: ParentInput) ->
-	               { extended = "${i.name}. How are you?" }
+                   { extended = "${i.name}. How are you?" }
   }
-	          
+}
 ```
 
 And we can define an 'Ap' API in terms of two parent APIs and a combining
@@ -78,12 +78,12 @@ in {
 apExample =
   { parentA    = "rawExample",
     parendB    = "fmapExample",
-	outputType = { compositeGreeting : Text },
-	f          = \(a: { greeting : Text }) ->
-	             \(b: { extended : Text }) ->
-				   { compositeGreeting =
-				     "We say to you, ${a.greeting} and ${b.extended}!"
-				   }
+    outputType = { compositeGreeting : Text },
+    f          = \(a: { greeting : Text }) ->
+                 \(b: { extended : Text }) ->
+                   { compositeGreeting =
+                     "We say to you, ${a.greeting} and ${b.extended}!"
+                   }
   }
 }
 ```
