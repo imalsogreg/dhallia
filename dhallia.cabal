@@ -17,7 +17,6 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:    API
-                      CallAPI
                       BuiltinHTTP
   -- other-modules:
   -- other-extensions:
