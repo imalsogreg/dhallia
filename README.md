@@ -62,8 +62,8 @@ in {
 fmapExample =
   { parent     = "rawExample",
     outputType = MyOutput,
-    f          = \(i: ParentInput) ->
-                   { extended = "${i.name}. How are you?" }
+    f          = \(i: ParentOutput) ->
+                   { extended = "${i.greeting}. How are you?" }
   }
 }
 ```
