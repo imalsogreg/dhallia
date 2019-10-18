@@ -19,7 +19,7 @@ client. API definitions are "raw" or "composite"
 
 ### Raw APIs (the base case)
 
-We'll model an hypothetical API that creates short greeings for
+We'll model an hypothetical API that creates short greetings for
 users. It accepts Requests like `https://example.com/greet/<name>` and
 returns responses like `{ "greeting", "Hello, Pete!" }`.
 
@@ -63,7 +63,7 @@ fmapExample =
   { parent     = "rawExample",
     outputType = MyOutput,
     f          = \(i: ParentInput) ->
-	               { extended = "${i.greeting}. How are you?" }
+	               { extended = "${i.name}. How are you?" }
   }
 	          
 ```
@@ -82,7 +82,7 @@ apExample =
 	f          = \(a: { greeting : Text }) ->
 	             \(b: { extended : Text }) ->
 				   { compositeGreeting =
-				     "We say to you, ${a.greeting} and ${b.greeting}!"
+				     "We say to you, ${a.greeting} and ${b.extended}!"
 				   }
   }
 }
