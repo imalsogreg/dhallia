@@ -116,7 +116,7 @@ getAPIs e@(Dhall.Core.RecordLit rs) =
         -> Dhall.Map.Map Text.Text A
       getAPI (name, Dhall.Core.RecordLit e) acc =
         Dhall.Map.insert name
-        (Maybe.fromMaybe (error "decoding error") (fmap Raw getRaw <|> fmap Fmap getFmap <|> fmap  Ap getAp))
+        (Maybe.fromMaybe (error "api decoding error") (fmap Raw getRaw <|> fmap Fmap getFmap <|> fmap  Ap getAp))
         acc
         where
           l fieldName = Dhall.Map.lookup fieldName e
@@ -162,7 +162,7 @@ showRequests api' inputE = do
       print $ Dhall.Pretty.prettyExpr $ Dhall.Core.normalize (Dhall.Core.App (toRequest api) inputE)
     Fmap api ->
       showRequests (parent api) inputE
-      -- print $ Dhall.Pretty.prettyExpr $ Dhall.Core.normalize (Dhall.Core.App (toRequest api) inputE)
+
     Ap api -> do
       let (inputA, inputB) = apInputs inputE
       showRequests (parentA api) inputA
@@ -178,18 +178,21 @@ runRequests api' inputE = case api' of
   Raw api@RawAPI{outputType} -> do
     let req  = Dhall.Core.normalize (Dhall.Core.App (toRequest api) inputE)
     
-    httpResp <- runHTTP (Maybe.fromMaybe (error "Request decoding error") (Dhall.rawInput @Maybe request req))
-    -- httpResp <- runHTTP (Maybe.fromMaybe (error "Request decoding error") _)
-    Monad.liftIO $ print httpResp
-    let Right dhallResp = Dhall.JSONToDhall.dhallFromJSON Dhall.JSONToDhall.defaultConversion outputType (Maybe.fromMaybe "Aeson decode error" $ Aeson.decode $ body httpResp)
-    -- let dhallResp = Dhall.Core.RecordLit
-    --                 (Dhall.Map.fromList [("body", String.fromString . Text.unpack $ body httpResp)])
+    httpResp <- runHTTP (Maybe.fromMaybe
+                          (error "Request decoding error")
+                          (Dhall.rawInput @Maybe request req))
+
+    -- Monad.liftIO $ print httpResp
+    let responseJSON = case Aeson.decode (body httpResp) of
+          Nothing    -> error "response body was not valid JSON"
+          Just jsVal -> jsVal :: Aeson.Value
+    let dhallResp =
+          case Dhall.JSONToDhall.dhallFromJSON Dhall.JSONToDhall.defaultConversion outputType responseJSON of
+            Left e -> error $ "DhallFromJSON error: " ++ show e
+            Right x -> x
+
     return $ Just dhallResp
 
-    -- case Dhall.Core.normalize (Dhall.Core.App (fromResponse api) dhallResp) of
-    --   Dhall.Core.Some resp -> do
-    --     Monad.liftIO $ print $ Dhall.Pretty.prettyExpr resp
-    --     return $ Just resp
 
   Fmap api@FmapAPI{f} -> do
     resp <- runRequests (parent api) inputE
@@ -220,3 +223,15 @@ test = do
   maybe (error "response error") (print . Dhall.Pretty.prettyExpr) r
 
  
+test2 :: IO ()
+test2 = do
+
+  mgr <- HTTPS.newTlsManager
+  x <- Dhall.inputExpr "./examples/cat-facts.dhall"
+  let deps = dependencyGraph x
+  Monad.when (topSort deps == Nothing) (error  "found a cycle")
+  exampleInput <- Dhall.inputExpr "{ _id = \"5d3e2191484b54001508b0df\" }"
+  r <- case Dhall.Map.lookup "cat-fact" (getAPIs x) of
+    Just api -> runReaderT (runRequests api exampleInput) mgr
+  maybe (error "response error") (print . Dhall.Pretty.prettyExpr) r
+
