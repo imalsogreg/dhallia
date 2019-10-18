@@ -34,7 +34,8 @@ let
                        then pkgs.haskellPackages
                        else pkgs.haskell.packages.${compiler}).override {
                          overrides = self: super: {
-                           algebraic-graphs = pkgs.haskell.lib.dontCheck super.algebraic-graphs;
+                           algebraic-graphs = pkgs.haskell.lib.dontCheck
+                             (self.callHackage "algebraic-graphs" "0.4" {});
                            dhall =
                              pkgs.haskell.lib.dontCheck
                              (self.callCabal2nix "dhall"   (dhallSrc+ "/dhall") {});
