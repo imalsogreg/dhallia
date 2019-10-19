@@ -45,8 +45,6 @@ data API s a =
   | Ap   (ApAPI s a)
   deriving (Eq, Show)
 
-
-
 data RawAPI s a = RawAPI
   { name         :: Text.Text
   , inputType    :: Dhall.Core.Expr s a
@@ -100,7 +98,7 @@ dependencyGraph (Dhall.Core.RecordLit rs) =
                   (Dhall.Map.toList rs)
   where
     componentsOf (name, e) =
-      let dependencyNames = 
+      let dependencyNames =
             getNamesAtFields e ["parent", "parentA", "parentB"]
           dependencies = Dhall.Map.restrictKeys rs (Set.fromList dependencyNames)
       in  Algebra.Graph.star (name,e) (Dhall.Map.toList dependencies)
@@ -136,7 +134,7 @@ getAPIs e@(Dhall.Core.RecordLit rs) =
             let inputType = Dhall.Core.RecordLit $ Dhall.Map.fromList
                             [("a", getInputType parentA)
                             ,("b", getInputType parentB)
-                            ] 
+                            ]
             f <- l "f"
             outputType <- l "outputType"
             return $ ApAPI{..}
@@ -171,16 +169,19 @@ showRequests api' inputE = do
 apInputs :: E -> (E, E)
 apInputs (Dhall.Core.RecordLit (Dhall.Map.toList -> [("a",a),("b",b)])) = (a,b)
 apInputs _ = error "Nope"
- 
+
 runRequests :: A -> E -> ReaderT HTTP.Manager IO (Maybe E)
 runRequests api' inputE = case api' of
 
   Raw api@RawAPI{outputType} -> do
     let req  = Dhall.Core.normalize (Dhall.Core.App (toRequest api) inputE)
-    
-    httpResp <- runHTTP (Maybe.fromMaybe
-                          (error "Request decoding error")
-                          (Dhall.rawInput @Maybe request req))
+    parsed' <- case (Dhall.rawInput @Maybe request req) of
+                 Just req -> pure req
+                 Nothing -> error "failed to decode request"
+
+    httpResp <- runHTTP parsed' -- $ Maybe.fromMaybe
+                          -- (error "Request decoding error")
+                          -- parsed'
 
     -- Monad.liftIO $ print httpResp
     let responseJSON = case Aeson.decode (body httpResp) of
@@ -200,7 +201,7 @@ runRequests api' inputE = case api' of
 
   Ap api@ApAPI{f} -> do
     let (inputA, inputB) = apInputs inputE
-    Just respA <- runRequests (parentA api) inputA 
+    Just respA <- runRequests (parentA api) inputA
     Just respB <- runRequests (parentB api) inputB
     let dhallResp = Dhall.Core.normalize (Dhall.Core.App (Dhall.Core.App f respA) respB)
     case dhallResp of
@@ -219,13 +220,11 @@ test = do
   example3Input <- Dhall.inputExpr "{a = {name = \"Tao\"}, b = { name = \"Greg\"} }"
   r <- case Dhall.Map.lookup "example3" (getAPIs x) of
     Just api -> runReaderT (runRequests api example3Input) mgr
-
   maybe (error "response error") (print . Dhall.Pretty.prettyExpr) r
 
- 
+
 test2 :: IO ()
 test2 = do
-
   mgr <- HTTPS.newTlsManager
   x <- Dhall.inputExpr "./examples/cat-facts.dhall"
   let deps = dependencyGraph x
@@ -235,3 +234,14 @@ test2 = do
     Just api -> runReaderT (runRequests api exampleInput) mgr
   maybe (error "response error") (print . Dhall.Pretty.prettyExpr) r
 
+
+test3 :: IO ()
+test3 = do
+  mgr <- HTTPS.newTlsManager
+  x <- Dhall.inputExpr "./examples/metaweather.dhall"
+  let deps = dependencyGraph x
+  Monad.when (topSort deps == Nothing) (error  "found a cycle")
+  exampleInput <- Dhall.inputExpr "\"san\""
+  r <- case Dhall.Map.lookup "mw-search" (getAPIs x) of
+    Just api -> runReaderT (runRequests api exampleInput) mgr
+  maybe (error "response error") (print . Dhall.Pretty.prettyExpr) r
