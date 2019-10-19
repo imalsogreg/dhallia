@@ -5,6 +5,7 @@
 
 import qualified Data.Text.Encoding as Text
 import qualified Data.Aeson as Aeson
+import qualified Data.Foldable as Foldable
 import System.Environment
 import Snap.Http.Server
 import Snap.Core
@@ -18,11 +19,25 @@ main = do
   httpServe (setPort port mempty) go
 
 go :: Snap ()
-go = route [("greet/:name",greeter)]
+go = route [("greet/:name",greeter)
+           ,("headers",echoHeaders)
+           ]
   where
     greeter = do
       Just name <- getParam "name"
       writeLBS (Aeson.encode (Aeson.object [ "greet" Aeson..= ("Hi " <> Text.decodeUtf8 name) ]))
+
+    echoHeaders = do
+      allHeaders <- listHeaders =<< getRequest
+      let
+        showHeader :: (CI ByteString, ByteString) -> ByteString
+        showHeader k v = (original k) <> ":" <> v
+
+        renderedHeaders :: ByteString
+        renderedHeaders =
+          mconcat . intercalate "; " $ map showheader allHeadrs
+
+      writeLBS renderedHeaders
 
 
 
