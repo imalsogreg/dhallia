@@ -8,13 +8,22 @@ let Request =
     requestBody : Optional Text
   }
 
+let QueryParam = { key: Text, value: Text }
+
 let defaultRequest : Request =
   { baseUrl       = "example.com",
     verb          = "GET",
     pathParts     = [] : List Text,
-    queryParams   = [] : List { key: Text, value: Text },
+    queryParams   = [] : List {key: Text, value: Text},
     requestBody   = None Text
   }
+
+let addNewQueryParam : Text -> Text -> Request -> Request
+ =  \(qKey: Text)
+ -> \(qVal: Text)
+ -> \(req: Request)
+ -> let qparam = {key = qKey, value = qVal}
+    in req // { queryParams = List/concat QueryParam [req.queryParams, [qparam]] }
 
 let addPathPart : Text -> Request -> Request
  =  \(p: Text)
@@ -22,8 +31,8 @@ let addPathPart : Text -> Request -> Request
  -> r // { pathParts = List/concat Text [r.pathParts, [p]] }
 
 in
-
 { type = Request,
   default = defaultRequest,
-  addPathPart = addPathPart
+  addPathPart = addPathPart,
+  addNewQueryParam = addNewQueryParam
 }
