@@ -19,13 +19,13 @@ let
   };
 
   f = { mkDerivation, algebraic-graphs, base, bytestring, containers, dhall, dhall-json, stdenv
-      , text, row-types
+      , text, row-types, cabal-install
       }:
       mkDerivation {
         pname = "dhallcalk";
         version = "0.1.0.0";
         src = ./.;
-        libraryHaskellDepends = [ algebraic-graphs base bytestring containers dhall dhall-json row-types text ];
+        libraryHaskellDepends = [ cabal-install algebraic-graphs base bytestring containers dhall dhall-json row-types text ];
         doHaddock = false;
         license = stdenv.lib.licenses.bsd3;
       };

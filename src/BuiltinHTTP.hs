@@ -29,11 +29,18 @@ import qualified Lens.Family             as Lens
 import qualified Network.HTTP.Client     as HTTP
 import qualified Network.HTTP.Client.TLS
 
+data QueryParam = QueryParam
+ { key   :: Text
+ , value :: Text
+ } deriving (Eq, Show, Generic)
+
+instance Dhall.Interpret QueryParam
+
 data Request = Request
  { baseUrl     :: Text
  , verb        :: Text
  , pathParts   :: [Text]
- , queryParams :: [(Text, Text)]
+ , queryParams :: [QueryParam]
  , requestBody :: Maybe Text
  } deriving (Eq, Show, Generic)
 
@@ -43,9 +50,9 @@ data Response = Response
 
 instance Dhall.Interpret Request
 
+
 -- instance Dhall.Interpret Response where
 --   autoWith opts = fmap Response (Dhall.autoWith opts)
-
 
 runHTTP :: Request -> ReaderT HTTP.Manager IO Response
 runHTTP Request{..} = do
@@ -64,7 +71,7 @@ runHTTP Request{..} = do
           reqParams =
             if   null queryParams
             then ""
-            else "?" <> Text.intercalate "&" (fmap (\(k,v) -> k <> "=" <> v) queryParams)
+            else "?" <> Text.intercalate "&" (fmap (\(QueryParam k v) -> k <> "=" <> v) queryParams)
 
       initReq <- HTTP.parseRequest (Text.unpack url)
       return $ initReq
@@ -100,12 +107,18 @@ request = Dhall.record $
   Request <$> Dhall.field "baseUrl" Dhall.strictText
           <*> Dhall.field "verb"    Dhall.strictText
           <*> Dhall.field "pathParts" (Dhall.list Dhall.strictText)
-          <*> Dhall.field "queryParams" (Dhall.list (Dhall.pair Dhall.strictText Dhall.strictText))
+          <*> Dhall.field "queryParams" (Dhall.list queryParam)
           <*> Dhall.field "requestBody" (Dhall.maybe Dhall.strictText)
+  where
+    queryParam :: Dhall.Type QueryParam
+    queryParam = Dhall.record $
+      QueryParam <$> Dhall.field "key" Dhall.strictText
+                 <*> Dhall.field "value" Dhall.strictText
+
 
 run :: Text.Text -> IO ()
 run dhallString = do
-  
+
   -- e <- Dhall.inputExpr dhallString
   let Right e = DhallParser.exprFromText "main" dhallString
   e' <- DhallImport.assertNoImports e
