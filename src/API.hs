@@ -1,42 +1,43 @@
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE ViewPatterns          #-}
 
 module API where
 
-import qualified Data.Aeson as Aeson
 import qualified Algebra.Graph
-import           Algebra.Graph.ToGraph (topSort)
-import qualified Control.Monad.IO.Class as Monad
-import Control.Applicative ((<|>))
-import qualified Data.Foldable as Foldable
-import Control.Monad.Reader (ReaderT, ask, runReaderT)
-import qualified Data.Set as Set
-import qualified Control.Monad as Monad
-import qualified Data.String as String
-import qualified Network.HTTP.Client     as HTTP
-import qualified Network.HTTP.Client.TLS as HTTPS
+import           Algebra.Graph.ToGraph   (topSort)
+import           Control.Applicative     ((<|>))
+import qualified Control.Monad           as Monad
+import qualified Control.Monad.IO.Class  as Monad
+import           Control.Monad.Reader    (ReaderT, ask, runReaderT)
+import qualified Data.Aeson              as Aeson
+import qualified Data.Foldable           as Foldable
+import qualified Data.Map                as Map
+import qualified Data.Maybe              as Maybe
+import qualified Data.Set                as Set
+import qualified Data.String             as String
+import qualified Data.Text               as Text
+import qualified Data.Text.IO            as Text
+import qualified Data.Traversable        as Traversable
+import           Data.Void               (Void)
 import qualified Dhall
+import qualified Dhall.Core
 import qualified Dhall.JSON
 import qualified Dhall.JSONToDhall
-import qualified Data.Traversable as Traversable
-import qualified Data.Maybe as Maybe
-import qualified Dhall.Core
+import qualified Dhall.Map
 import qualified Dhall.Parser
 import qualified Dhall.Pretty
 import qualified Dhall.Src
 import qualified Dhall.TypeCheck
-import qualified Dhall.Map
-import qualified Data.Map as Map
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
+import qualified Network.HTTP.Client     as HTTP
+import qualified Network.HTTP.Client.TLS as HTTPS
 
-import BuiltinHTTP
+import           BuiltinHTTP
 
 data API s a =
     Raw (RawAPI s a)
@@ -58,28 +59,28 @@ data RawAPI s a = RawAPI
   } deriving (Eq, Show)
 
 data FmapAPI s a = FmapAPI
-  { name         :: Text.Text
-  , parent       :: API s a
-  , f            :: Dhall.Core.Expr s a
-  , inputType    :: Dhall.Core.Expr s a
-  , outputType   :: Dhall.Core.Expr s a
+  { name       :: Text.Text
+  , parent     :: API s a
+  , f          :: Dhall.Core.Expr s a
+  , inputType  :: Dhall.Core.Expr s a
+  , outputType :: Dhall.Core.Expr s a
   } deriving (Eq, Show)
 
 data ApAPI s a = ApAPI
-  { name          :: Text.Text
-  , parentA       :: API s a
-  , parentB       :: API s a
-  , f             :: Dhall.Core.Expr s a
-  , inputType     :: Dhall.Core.Expr s a
-  , outputType    :: Dhall.Core.Expr s a
+  { name       :: Text.Text
+  , parentA    :: API s a
+  , parentB    :: API s a
+  , f          :: Dhall.Core.Expr s a
+  , inputType  :: Dhall.Core.Expr s a
+  , outputType :: Dhall.Core.Expr s a
   } deriving (Eq, Show)
 
 newtype Exprs s a = Exprs
   { getExprs :: Dhall.Map.Map Text.Text (Dhall.Core.Expr s a) }
 
 
-type E = Dhall.Core.Expr Dhall.Src.Src Dhall.TypeCheck.X
-type A = API Dhall.Src.Src Dhall.TypeCheck.X
+type E = Dhall.Core.Expr Dhall.Src.Src Void
+type A = API Dhall.Src.Src Void
 
 -- Extract names from the fields of a Dhall encoding of an API
 getNamesAtFields :: E -> [Text.Text] -> [Text.Text]
@@ -143,14 +144,14 @@ getAPIs e@(Dhall.Core.RecordLit rs) =
   in  apis
 
 getInputType :: A -> E
-getInputType (Raw RawAPI{inputType}) = inputType
+getInputType (Raw RawAPI{inputType})   = inputType
 getInputType (Fmap FmapAPI{inputType}) = inputType
-getInputType (Ap   ApAPI{inputType}) = inputType
+getInputType (Ap   ApAPI{inputType})   = inputType
 
 getOutputType :: A -> E
-getOutputType (Raw RawAPI{outputType}) = outputType
+getOutputType (Raw RawAPI{outputType})   = outputType
 getOutputType (Fmap FmapAPI{outputType}) = outputType
-getOutputType (Ap   ApAPI{outputType}) = outputType
+getOutputType (Ap   ApAPI{outputType})   = outputType
 
 
 showRequests :: A -> E -> IO ()
@@ -177,7 +178,7 @@ runRequests api' inputE = case api' of
     let req  = Dhall.Core.normalize (Dhall.Core.App (toRequest api) inputE)
     parsed' <- case (Dhall.rawInput @Maybe request req) of
                  Just req -> pure req
-                 Nothing -> error "failed to decode request"
+                 Nothing  -> error "failed to decode request"
 
     httpResp <- runHTTP parsed' -- $ Maybe.fromMaybe
                           -- (error "Request decoding error")
@@ -189,7 +190,7 @@ runRequests api' inputE = case api' of
           Just jsVal -> jsVal :: Aeson.Value
     let dhallResp =
           case Dhall.JSONToDhall.dhallFromJSON Dhall.JSONToDhall.defaultConversion outputType responseJSON of
-            Left e -> error $ "DhallFromJSON error: " ++ show e
+            Left e  -> error $ "DhallFromJSON error: " ++ show e
             Right x -> x
 
     return $ Just dhallResp

@@ -12,6 +12,7 @@ import           Data.Text               (Text)
 import qualified Data.Text               as Text
 import qualified Data.Text.Encoding      as Text
 import qualified Data.Text.IO
+import           Data.Void               (Void)
 import qualified Dhall
 import qualified Dhall.Context
 import qualified Dhall.Context
@@ -34,7 +35,7 @@ data QueryParam = QueryParam
  , value :: Text
  } deriving (Eq, Show, Generic)
 
-instance Dhall.Interpret QueryParam
+instance Dhall.FromDhall QueryParam
 
 data Request = Request
  { baseUrl     :: Text
@@ -48,7 +49,7 @@ data Response = Response
   { body :: LBS.ByteString
   } deriving (Eq, Show, Generic)
 
-instance Dhall.Interpret Request
+instance Dhall.FromDhall Request
 
 
 -- instance Dhall.Interpret Response where
@@ -131,7 +132,7 @@ run dhallString = do
 -- normalizer :: Core.ReifiedNormalizer X
 -- normalizer (Core.
 
-normalizerM :: Core.NormalizerM (ReaderT HTTP.Manager IO) X
+normalizerM :: Core.NormalizerM (ReaderT HTTP.Manager IO) Void
 normalizerM ( Core.App (Core.Var (Core.V "runHTTP" _))
               (x )
              -- (Core.RecordLit (Map.toList -> [("baseUrl", b@(Core.TextLit (Core.Chunks [] bUrl)))

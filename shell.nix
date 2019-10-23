@@ -1,28 +1,41 @@
 { nixpkgs_rev ?
   "fba9144f92f532c5a525c468b474d1d81025d501"
   # Should be at at least as recent as 2019-10-07 master
+, all_cabal_hashes_rev ?
+  "33856621c362bae377b7b95d233c0112e891af72"
 , compiler ? "default"
 , doBenchmark ? false }:
 
 let
 
+allCabalHashesOverlay = self: super: {
+ all-cabal-hashes = builtins.fetchurl
+   { url =
+       "https://github.com/commercialhaskell/all-cabal-hashes/archive/${all_cabal_hashes_rev}.tar.gz";
+     name =
+       "all-cabal-hashes-${all_cabal_hashes_rev}.tar.gz";
+   };
+  };
+
   nixpkgs =
     import
-    (builtins.fetchTarball "https://github.com/nixos/nixpkgs/archive/${nixpkgs_rev}.tar.gz") {};
+    (builtins.fetchTarball "https://github.com/nixos/nixpkgs/archive/${nixpkgs_rev}.tar.gz") {
+    overlays = [ allCabalHashesOverlay ];
+    };
   inherit (nixpkgs) pkgs;
 
   dhallSrc = pkgs.fetchFromGitHub {
     owner     = "dhall-lang";
     repo      = "dhall-haskell";
-    rev       = "65710954cf8f2217b9959cd73a5d8a40d03aab39";
-    sha256    = "10zwkr4wrw0ilplawp959dz9k9yndcdyfa87agcnjkyp1vgzm8rg";
+    rev       = "7b414d9846ceb056fd7ee6a8147c03e3dd87ae60";
+    sha256    = "1r26pqvk599qd0rhagr1pl2rzhg4rjd8h4338h575n8vbkmhphnl";
   };
 
   f = { mkDerivation, algebraic-graphs, base, bytestring, containers, dhall, dhall-json, stdenv
       , text, row-types, cabal-install, snap-core, snap-server, aeson
       }:
       mkDerivation {
-        pname = "dhallcalk";
+        pname = "dhallia";
         version = "0.1.0.0";
         src = ./.;
         libraryHaskellDepends = [ cabal-install algebraic-graphs base
@@ -36,6 +49,7 @@ let
                        then pkgs.haskellPackages
                        else pkgs.haskell.packages.${compiler}).override {
                          overrides = self: super: {
+                           aeson-yaml = self.callHackage "aeson-yaml" "1.0.2.0" {};
                            algebraic-graphs = pkgs.haskell.lib.dontCheck
                              (self.callHackage "algebraic-graphs" "0.4" {});
                            dhall =
