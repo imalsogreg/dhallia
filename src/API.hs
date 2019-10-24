@@ -246,3 +246,15 @@ test3 = do
   r <- case Dhall.Map.lookup "mw-search" (getAPIs x) of
     Just api -> runReaderT (runRequests api exampleInput) mgr
   maybe (error "response error") (print . Dhall.Pretty.prettyExpr) r
+
+
+test4 :: IO String
+test4 = do
+  mgr <- HTTPS.newTlsManager
+  x <- Dhall.inputExpr "./examples/cat-facts.dhall"
+  let deps = dependencyGraph x
+  Monad.when (topSort deps == Nothing) (error  "found a cycle")
+  exampleInput <- Dhall.inputExpr "{}"
+  r <- case Dhall.Map.lookup "just-the-facts" (getAPIs x) of
+    Just api -> runReaderT (runRequests api exampleInput) mgr
+  maybe (error "response error") (return . show . Dhall.Pretty.prettyExpr) r

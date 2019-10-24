@@ -11,6 +11,7 @@ cabal-version:      >= 1.10
 library
   exposed-modules:  API
                     BuiltinHTTP
+                    Repl
   hs-source-dirs:   src
   build-depends:    base             >= 4.11 && < 4.13
                   , aeson
