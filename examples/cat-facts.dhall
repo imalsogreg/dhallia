@@ -36,6 +36,14 @@ in
       fromResponse = +1
     },
 
+  just-the-facts =
+    let List/map = https://prelude.dhall-lang.org/List/map
+    in
+    { parent = "cat-facts",
+      f = \(facts: { all : List ListFact} ) -> List/map ListFact Text (\(m : ListFact) -> m.text) facts.all,
+      outputType = List Text
+    },
+
   cat-fact =
     { inputType  = { _id : Text },
       outputType = Fact,
