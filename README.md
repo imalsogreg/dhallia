@@ -94,7 +94,7 @@ Above we _described_ our APIs, now we want to use them.
 
 Right now the only way to use them is to parse the API definitions,
 then construct inputs as `dhall` values in Haskell, and call the
-[runRequests](https://github.com/imalsogreg/dhallia/blob/master/src/API.hs#L175)
+[runRequests](https://github.com/imalsogreg/dhallia/blob/master/src/Dhallia/Interpreter/HTTPClient/API.hs#L47)
 function.
 
 ### Runtime features
