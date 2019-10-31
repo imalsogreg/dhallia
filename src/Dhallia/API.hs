@@ -35,8 +35,6 @@ import qualified Dhall.Src
 import qualified Dhall.TypeCheck
 
 
-import           BuiltinHTTP
-
 data API =
     Raw RawAPI
   -- | Cmap CmapAPI

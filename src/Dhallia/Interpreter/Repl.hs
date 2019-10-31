@@ -1,3 +1,6 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
+
 module Dhallia.Interpreter.Repl where
 
 import qualified Control.Monad.Reader    as Monad
@@ -7,6 +10,7 @@ import qualified Data.Text               as Text
 import           Data.Text               (Text)
 import qualified Network.HTTP.Client.TLS as HTTP
 import qualified System.Console.Repline  as R
+import qualified System.Console.Haskeline  as R
 import qualified Data.IORef              as IORef
 import qualified Dhall.Map as Map
 import qualified Dhall
@@ -59,8 +63,31 @@ listAPIs [] = do
   apis    <- IO.liftIO $ IORef.readIORef apisRef
   IO.liftIO $ mapM_ (putStrLn . Text.unpack) (Map.keys apis)
 
-completer :: Monad m => R.LineCompleter m
-completer = undefined
+
+completer :: R.CompleterStyle (Monad.ReaderT Env IO)
+completer = R.Cursor $ \beforeWord (Text.pack -> word) -> do
+
+  case (beforeWord, Text.stripPrefix ":" word) of
+
+    -- Handle ":some-command"
+    ("", Just _) -> return $
+      completeFrom True word [":load", ":list", ":quit"]
+
+    -- Handle "some-api"
+    _ -> do
+      apis <- IO.liftIO . IORef.readIORef =<< Monad.asks apis
+      return $ completeFrom False word (Map.keys apis)
+
+  where
+    completeFrom isDone prefix possibleCompletions =
+        [ R.Completion { R.replacement = Text.unpack k
+                       , R.display     = Text.unpack k
+                       , R.isFinished  = isDone
+                       }
+        | k <- possibleCompletions
+        , prefix `Text.isPrefixOf` k
+        ]
+
 
 ini :: Repl ()
 ini = IO.liftIO (print "Welcome!")
@@ -73,6 +100,6 @@ repl = do
   apis <- IORef.newIORef mempty
   Monad.runReaderT
     (R.evalRepl
-      (pure "❀> ") cmd options (Just ':') (R.Cursor completer) ini
+      (pure "❀> ") cmd options (Just ':') completer ini
     ) (Env mgr apis)
 
