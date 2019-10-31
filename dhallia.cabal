@@ -9,9 +9,10 @@ extra-source-files: ChangeLog.md
 cabal-version:      >= 1.10
 
 library
-  exposed-modules:  API
-                    BuiltinHTTP
-                    Repl
+  exposed-modules:  Dhallia.API
+                    Dhallia.Check
+                    Dhallia.Interpreter.HTTPClient
+                    Dhallia.Interpreter.Repl
   hs-source-dirs:   src
   build-depends:    base             >= 4.11 && < 4.13
                   , aeson

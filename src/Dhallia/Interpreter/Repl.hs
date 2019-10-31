@@ -1,4 +1,4 @@
-module Repl where
+module Dhallia.Interpreter.Repl where
 
 import qualified Control.Monad.Reader    as Monad
 import qualified Control.Monad.IO.Class  as IO
@@ -8,18 +8,19 @@ import           Data.Text               (Text)
 import qualified Network.HTTP.Client.TLS as HTTP
 import qualified System.Console.Repline  as R
 import qualified Data.IORef              as IORef
-import qualified Dhall.Map
+import qualified Dhall.Map as Map
 import qualified Dhall
 import qualified Dhall.Core as Dhall
 import qualified Dhall.Pretty as Dhall
 
 import qualified Data.List as List
 
-import API (A, getAPIs, runRequests)
+import Dhallia.API
+import Dhallia.Interpreter.HTTPClient
 
 data Env = Env
   { manager :: HTTP.Manager
-  , apis    :: IORef.IORef (Dhall.Map.Map Text.Text A)
+  , apis    :: IORef.IORef (Map.Map Text.Text API)
     -- cache :: DhalliaCache -- TODO
   }
 
@@ -28,7 +29,7 @@ cmd c = do
   let (apiName, apiArgument) = List.break (== ' ') c
   env  <- Monad.ask
   apis <- IO.liftIO (IORef.readIORef (apis env))
-  case Dhall.Map.lookup (Text.pack apiName) apis of
+  case Map.lookup (Text.pack apiName) apis of
     Nothing  -> error ("No such api: " <> apiName)
     Just api -> do
       dhallInput <- IO.liftIO $ Dhall.inputExpr (Text.pack apiArgument)
@@ -56,7 +57,7 @@ listAPIs :: [String] -> Repl ()
 listAPIs [] = do
   apisRef <- Monad.asks apis
   apis    <- IO.liftIO $ IORef.readIORef apisRef
-  IO.liftIO $ mapM_ (putStrLn . Text.unpack) (Dhall.Map.keys apis)
+  IO.liftIO $ mapM_ (putStrLn . Text.unpack) (Map.keys apis)
 
 completer :: Monad m => R.LineCompleter m
 completer = undefined

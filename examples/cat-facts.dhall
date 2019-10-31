@@ -32,8 +32,7 @@ in
       outputType =
         { all : List ListFact },
       toRequest = \(_: {}) ->
-        Req.default // { baseUrl = url },
-      fromResponse = +1
+        Req.default // { baseUrl = url }
     },
 
   just-the-facts =
@@ -50,7 +49,6 @@ in
       toRequest = \(i: { _id : Text }) ->
         Req.addPathPart
 	  i._id
-	  (Req.default // { baseUrl = url }),
-      fromResponse = +1
+	  (Req.default // { baseUrl = url })
     }
 }

@@ -1,0 +1,5 @@
+dist
+dist-newstyle
+*~
+Setup.hs
+.history
