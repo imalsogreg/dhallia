@@ -27,6 +27,9 @@ import qualified Dhall.Map as Map
 import qualified Dhall.JSONToDhall
 
 import Dhallia.API
+import Dhallia.Cache
+import Dhallia.Cache.InMemory
+import Dhallia.Expr
 
 request :: Dhall.Type Request
 request = Dhall.record $
@@ -43,40 +46,55 @@ request = Dhall.record $
 
 
 
+runRequests :: API (Cache IO) -> Expr -> ReaderT HTTP.Manager IO (Maybe Expr)
+runRequests api' inputE = do
+ -- maybe (return ()) (\Cache{stats} -> IO.liftIO (stats >>= print)) (getCache api')
+ cacheResult <- maybe (return Nothing)
+                      (\Cache{get} -> IO.liftIO (get inputE))
+                      (getCache api')
+ case cacheResult of
+   Just r  -> IO.liftIO (putStrLn "Cache Hit" >> return (Just r))
+   Nothing -> do
+    IO.liftIO (putStrLn "Cache Miss")
+    r <- case api' of
 
-runRequests :: API -> Expr -> ReaderT HTTP.Manager IO (Maybe Expr)
-runRequests api' inputE = case api' of
-
-  Raw api@RawAPI{outputType} -> do
-    let req  = Dhall.Core.normalize (Dhall.Core.App (toRequest api) inputE)
-    parsed' <- case (Dhall.rawInput @Maybe request req) of
-                 Just req -> pure req
-                 Nothing  -> error "failed to decode request"
-
-    httpResp <- runHTTP parsed'
-
-    let responseJSON = case Aeson.decode (body httpResp) of
-          Nothing    -> error "response body was not valid JSON"
-          Just jsVal -> jsVal :: Aeson.Value
-    let dhallResp =
-          case Dhall.JSONToDhall.dhallFromJSON Dhall.JSONToDhall.defaultConversion outputType responseJSON of
-            Left e  -> error $ "DhallFromJSON error: " ++ show e
-            Right x -> x
-
-    return $ Just dhallResp
-
-
-  MapOut api@MapOutAPI{f} -> do
-    resp <- runRequests (parent api) inputE
-    return $ fmap (Dhall.Core.normalize . Dhall.Core.App f) resp
-
-  Merge api@MergeAPI{f} -> do
-    let (inputA, inputB) = apInputs inputE
-    Just respA <- runRequests (parentA api) inputA
-    Just respB <- runRequests (parentB api) inputB
-    let dhallResp = Dhall.Core.normalize (Dhall.Core.App (Dhall.Core.App f respA) respB)
-    case dhallResp of
-      Dhall.Core.Some resp -> return $ Just resp
+      Raw api@RawAPI{outputType} -> do
+        let req  = Dhall.Core.normalize (Dhall.Core.App (toRequest api) inputE)
+        parsed' <- case (Dhall.rawInput @Maybe request req) of
+                     Just req -> pure req
+                     Nothing  -> error "failed to decode request"
+      
+        httpResp <- runHTTP parsed'
+      
+        let responseJSON = case Aeson.decode (body httpResp) of
+              Nothing    -> error "response body was not valid JSON"
+              Just jsVal -> jsVal :: Aeson.Value
+        let dhallResp =
+              case Dhall.JSONToDhall.dhallFromJSON Dhall.JSONToDhall.defaultConversion outputType responseJSON of
+                Left e  -> error $ "DhallFromJSON error: " ++ show e
+                Right x -> x
+      
+        return $ Just dhallResp
+      
+      MapIn api@MapInAPI{f,parent} -> do
+        let requestInput = Dhall.Core.normalize (Dhall.Core.App f inputE)
+        runRequests parent requestInput
+      
+      MapOut api@MapOutAPI{f,parent} -> do
+        resp <- runRequests parent inputE
+        return $ fmap (Dhall.Core.normalize . Dhall.Core.App f) resp
+      
+      Merge api@MergeAPI{f,parentA,parentB} -> do
+        let (inputA, inputB) = apInputs inputE
+        Just respA <- runRequests parentA inputA
+        Just respB <- runRequests parentB inputB
+        let dhallResp = Dhall.Core.normalize (Dhall.Core.App (Dhall.Core.App f respA) respB)
+        case dhallResp of
+          Dhall.Core.Some resp -> return $ Just resp
+    maybe (return ())
+          (\(Cache{..}, val) -> IO.liftIO (set inputE val))
+          ((,) <$> getCache api' <*> r)
+    return r
 
 data QueryParam = QueryParam
  { key   :: Text.Text
@@ -136,7 +154,8 @@ test = do
   example1Input <- Dhall.inputExpr "{ name = \"Taosie\" }"
   example2Input <- Dhall.inputExpr "{ name = \"Tao\" }"
   example3Input <- Dhall.inputExpr "{a = {name = \"Tao\"}, b = { name = \"Greg\"} }"
-  r <- case Map.lookup "example3" (getAPIs x) of
+  apis <- getAPIs makeInMemory x
+  r <- case Map.lookup "example3" apis of
     Just api -> runReaderT (runRequests api example3Input) mgr
   maybe (error "response error") (print . Pretty.prettyExpr) r
 
@@ -148,7 +167,8 @@ test2 = do
   let deps = dependencyGraph x
   Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
   exampleInput <- Dhall.inputExpr "{ _id = \"5d3e2191484b54001508b0df\" }"
-  r <- case Map.lookup "cat-fact" (getAPIs x) of
+  apis <- getAPIs makeInMemory x
+  r <- case Map.lookup "cat-fact" apis of
     Just api -> runReaderT (runRequests api exampleInput) mgr
   maybe (error "response error") (print . Pretty.prettyExpr) r
 
@@ -160,7 +180,8 @@ test3 = do
   let deps = dependencyGraph x
   Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
   exampleInput <- Dhall.inputExpr "\"san\""
-  r <- case Map.lookup "mw-search" (getAPIs x) of
+  apis <- getAPIs makeInMemory x
+  r <- case Map.lookup "mw-search" apis of
     Just api -> runReaderT (runRequests api exampleInput) mgr
   maybe (error "response error") (print . Pretty.prettyExpr) r
 
@@ -172,6 +193,7 @@ test4 = do
   let deps = dependencyGraph x
   Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
   exampleInput <- Dhall.inputExpr "{}"
-  r <- case Map.lookup "just-the-facts" (getAPIs x) of
+  apis <- getAPIs makeInMemory x
+  r <- case Map.lookup "just-the-facts" apis of
     Just api -> runReaderT (runRequests api exampleInput) mgr
   maybe (error "response error") (return . show . Pretty.prettyExpr) r

@@ -10,6 +10,8 @@ let Request =
 
 let QueryParam = { key: Text, value: Text }
 
+let Cache = { ttlSeconds : Integer }
+
 let defaultRequest : Request =
   { baseUrl       = "example.com",
     verb          = "GET",

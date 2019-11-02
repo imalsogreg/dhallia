@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
@@ -17,7 +18,6 @@ import qualified Control.Monad.IO.Class  as Monad
 import           Control.Monad.Reader    (ReaderT, ask, runReaderT)
 import qualified Data.Aeson              as Aeson
 import qualified Data.Foldable           as Foldable
--- import qualified Data.Map                as Map
 import qualified Data.Maybe              as Maybe
 import qualified Data.Set                as Set
 import qualified Data.String             as String
@@ -34,19 +34,20 @@ import qualified Dhall.Pretty
 import qualified Dhall.Src
 import qualified Dhall.TypeCheck
 
+import Dhallia.Expr (Expr)
+import Dhallia.Cache
+import Dhallia.Cache.InMemory
 
-import           BuiltinHTTP
-
-data API =
-    Raw RawAPI
-  -- | Cmap CmapAPI
-  | MapOut MapOutAPI
-  | Merge   MergeAPI
+data API c =
+    Raw    (RawAPI c)
+  | MapIn  (MapInAPI c)
+  | MapOut (MapOutAPI c)
+  | Merge  (MergeAPI c)
   deriving (Eq, Show)
 
-type Expr = Dhall.Core.Expr Dhall.Src.Src Void
 
-data RawAPI = RawAPI
+
+data RawAPI c = RawAPI
   { name         :: Text.Text
   , inputType    :: Expr
     -- ^ A Dhall type
@@ -54,23 +55,37 @@ data RawAPI = RawAPI
     -- ^ A Dhall type
   , toRequest    :: Expr
     -- ^ A Dhall function (input -> Request)
+  , cache        :: Maybe c
   } deriving (Eq, Show)
 
-data MapOutAPI = MapOutAPI
+
+data MapInAPI c = MapInAPI
   { name       :: Text.Text
-  , parent     :: API
+  , parent     :: API c
   , f          :: Expr
   , inputType  :: Expr
   , outputType :: Expr
+  , cache      :: Maybe c
   } deriving (Eq, Show)
 
-data MergeAPI = MergeAPI
+
+data MapOutAPI c = MapOutAPI
   { name       :: Text.Text
-  , parentA    :: API
-  , parentB    :: API
+  , parent     :: API c
   , f          :: Expr
   , inputType  :: Expr
   , outputType :: Expr
+  , cache      :: Maybe c
+  } deriving (Eq, Show)
+
+data MergeAPI c = MergeAPI
+  { name       :: Text.Text
+  , parentA    :: API c
+  , parentB    :: API c
+  , f          :: Expr
+  , inputType  :: Expr
+  , outputType :: Expr
+  , cache      :: Maybe c
   } deriving (Eq, Show)
 
 
@@ -97,29 +112,49 @@ dependencyGraph (Dhall.Core.RecordLit rs) =
       in  Algebra.Graph.star (name,e) (Map.toList dependencies)
 
 
-getAPIs :: Expr -> Map.Map Text.Text API
-getAPIs e@(Dhall.Core.RecordLit rs) =
+getAPIs :: forall c.(CacheInfo -> IO c) -> Expr -> IO (Map.Map Text.Text (API c))
+getAPIs makeCache e@(Dhall.Core.RecordLit rs) =
   let sortedExprs = Maybe.fromMaybe (error "Found cycle")  (topSort $ dependencyGraph e)
 
       getAPI
         :: (Text.Text, Expr)
-        -> Map.Map Text.Text API
-        -> Map.Map Text.Text API
-      getAPI (name, Dhall.Core.RecordLit e) acc =
-        Map.insert name
-        (Maybe.fromMaybe (error "api decoding error") (fmap Raw getRaw <|> fmap MapOut getMapOut <|> fmap  Merge getMerge))
-        acc
+        -> Map.Map Text.Text (API c)
+        -> IO (Map.Map Text.Text (API c))
+      getAPI (name, Dhall.Core.RecordLit e) acc = do
+
+        cache <- case Map.lookup "cache" e of
+          Nothing -> return Nothing
+          Just e  -> do
+            print (Dhall.Pretty.prettyExpr e)
+            let cacheInfo = Maybe.fromMaybe (error "CacheInfo decoding error") $
+                            Dhall.rawInput @Maybe (Dhall.maybe cacheType) e
+            maybe (return Nothing) (fmap Just . makeCache) cacheInfo
+
+        return $
+          Map.insert name
+          (Maybe.fromMaybe (error "api decoding error") (fmap Raw (getRaw cache) <|> fmap MapOut (getMapOut cache) <|> fmap  Merge (getMerge cache)))
+          acc
         where
-          l fieldName = Map.lookup fieldName e
-          getRaw  = RawAPI <$> pure name <*> l "inputType" <*> l "outputType" <*> l "toRequest"
-          getMapOut = do
+          l fieldName  = Map.lookup fieldName e
+
+          getRaw cache = do
+            -- maybeCache <- 
+            RawAPI <$> pure name <*> l "inputType" <*> l "outputType" <*> l "toRequest" <*> pure cache
+          getMapIn cache = do
+            Dhall.Core.TextLit (Dhall.Core.Chunks [] parentName) <- l "parent"
+            parent  <- Map.lookup parentName acc
+            let outputType = getOutputType parent
+            inputType <- l "inputType"
+            f <- l "f"
+            return $ MapInAPI{..}
+          getMapOut cache = do
             Dhall.Core.TextLit (Dhall.Core.Chunks [] parentName) <- l "parent"
             parent  <- Map.lookup parentName acc
             let inputType = getInputType parent
             outputType <- l "outputType"
             f <- l "f"
             return $ MapOutAPI{..}
-          getMerge   = do
+          getMerge cache = do
             Dhall.Core.TextLit (Dhall.Core.Chunks [] parentAName) <- l "parentA"
             Dhall.Core.TextLit (Dhall.Core.Chunks [] parentBName) <- l "parentB"
             parentA <- Map.lookup parentAName acc
@@ -132,27 +167,40 @@ getAPIs e@(Dhall.Core.RecordLit rs) =
             outputType <- l "outputType"
             return $ MergeAPI{..}
 
-      apis = Foldable.foldr getAPI mempty sortedExprs
+      apis = Foldable.foldrM getAPI mempty sortedExprs
   in  apis
 
-getInputType :: API -> Expr
-getInputType (Raw  RawAPI{inputType})   = inputType
+getInputType :: API c -> Expr
+getInputType (Raw    RawAPI{inputType})    = inputType
+getInputType (MapIn  MapInAPI{inputType})  = inputType
 getInputType (MapOut MapOutAPI{inputType}) = inputType
-getInputType (Merge   MergeAPI{inputType})   = inputType
+getInputType (Merge  MergeAPI{inputType})  = inputType
 
-getOutputType :: API -> Expr
-getOutputType (Raw     RawAPI{outputType})    = outputType
-getOutputType (MapOut  MapOutAPI{outputType}) = outputType
-getOutputType (Merge   MergeAPI{outputType})  = outputType
+getOutputType :: API c -> Expr
+getOutputType (Raw    RawAPI{outputType})    = outputType
+getOutputType (MapIn  MapInAPI{outputType})  = outputType
+getOutputType (MapOut MapOutAPI{outputType}) = outputType
+getOutputType (Merge  MergeAPI{outputType})  = outputType
 
+getCache :: API c -> Maybe c
+getCache (Raw    RawAPI{cache}) = cache
+getCache (MapOut MapOutAPI{cache}) = cache
+getCache (MapIn MapInAPI{cache}) = cache
+getCache (Merge MergeAPI{cache}) = cache
 
-showRequests :: API -> Expr -> IO ()
+showRequests :: API c -> Expr -> IO ()
 showRequests api' inputE = do
   case api' of
-    Raw api ->
-      print $ Dhall.Pretty.prettyExpr $ Dhall.Core.normalize (Dhall.Core.App (toRequest api) inputE)
-    MapOut api ->
-      showRequests (parent api) inputE
+
+    Raw RawAPI{toRequest} ->
+      print $ Dhall.Pretty.prettyExpr $ Dhall.Core.normalize (Dhall.Core.App toRequest inputE)
+
+    MapIn MapInAPI{f,parent} ->
+      let requestInput = Dhall.Core.normalize (Dhall.Core.App f inputE)
+      in  showRequests parent requestInput
+
+    MapOut MapOutAPI{parent} ->
+      showRequests parent inputE
 
     Merge api -> do
       let (inputA, inputB) = apInputs inputE
