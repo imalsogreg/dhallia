@@ -28,6 +28,7 @@ library
                   , http-client-tls
                   , lens-family-core
                   , mtl
+                  , haskeline
                   , repline
                   , row-types
                   , text
