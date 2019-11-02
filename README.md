@@ -101,10 +101,11 @@ function.
 
  - [x] Extract basic API data from `.dhall` configuration
  - [x] Execute requests against raw and composite APIs within Haskell
- - [ ] Provide a `haskline` REPL for applying APIs to their arguments
+ - [x] Provide a `haskline` REPL for applying APIs to their arguments
  - [ ] Use the APIs type information to drive autocompletion/hinting
- - [ ] Allow specification of caching rules in raw apis; caching inference in composite APIs
- - [ ] Cache API responses in some key-value store
+ - [x] Allow specification of caching rules in raw apis
+ - [ ] Caching inference for composite APIs
+ - [x] Cache API responses in some key-value store
  - [ ] UI for inspecting/invalidating cache lines
  - [ ] Dry-run mode for printing raw HTTP calls behind a composite API call
 
