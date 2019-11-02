@@ -21,10 +21,12 @@ import qualified Data.List as List
 
 import Dhallia.API
 import Dhallia.Interpreter.HTTPClient
+import Dhallia.Cache
+import Dhallia.Cache.InMemory
 
 data Env = Env
   { manager :: HTTP.Manager
-  , apis    :: IORef.IORef (Map.Map Text.Text API)
+  , apis    :: IORef.IORef (Map.Map Text.Text (API (Cache IO)))
     -- cache :: DhalliaCache -- TODO
   }
 
@@ -54,8 +56,9 @@ loadAPIs :: [String] -> Repl ()
 loadAPIs [expr] = do
   apisRef <- Monad.asks apis
   newAPIs <- IO.liftIO $ Dhall.inputExpr (Text.pack expr)
+  newAPIs' <- IO.liftIO $ getAPIs makeInMemory newAPIs
   case newAPIs of
-    Dhall.RecordLit e -> IO.liftIO $ IORef.modifyIORef apisRef (<> getAPIs newAPIs) >> putStrLn "Success"
+    Dhall.RecordLit e -> IO.liftIO $ IORef.modifyIORef apisRef (<> newAPIs') >> putStrLn "Success"
 
 listAPIs :: [String] -> Repl ()
 listAPIs [] = do

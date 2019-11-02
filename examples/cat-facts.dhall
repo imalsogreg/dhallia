@@ -49,6 +49,15 @@ in
       toRequest = \(i: { _id : Text }) ->
         Req.addPathPart
 	  i._id
-	  (Req.default // { baseUrl = url })
+	  (Req.default // { baseUrl = url }),
+      cache = Some { ttlSeconds = +3600 }
+    },
+
+  cat-fact-by-string =
+    { inputType = Text,
+      parent = "cat-fact",
+      f = \(t: Text) -> { _id = t },
+      cache = Some { ttlSeconds = +3600 }
     }
+
 }
