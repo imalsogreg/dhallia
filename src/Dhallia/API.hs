@@ -11,32 +11,20 @@
 module Dhallia.API where
 
 import qualified Algebra.Graph
-import           Algebra.Graph.ToGraph   (topSort)
-import           Control.Applicative     ((<|>))
-import qualified Control.Monad           as Monad
-import qualified Control.Monad.IO.Class  as Monad
-import           Control.Monad.Reader    (ReaderT, ask, runReaderT)
-import qualified Data.Aeson              as Aeson
-import qualified Data.Foldable           as Foldable
-import qualified Data.Maybe              as Maybe
-import qualified Data.Set                as Set
-import qualified Data.String             as String
-import qualified Data.Text               as Text
-import qualified Data.Text.IO            as Text
-import qualified Data.Traversable        as Traversable
-import           Data.Void               (Void)
+import           Algebra.Graph.ToGraph (topSort)
+import           Control.Applicative   ((<|>))
+import qualified Data.Foldable         as Foldable
+import qualified Data.Maybe            as Maybe
+import qualified Data.Set              as Set
+import qualified Data.Text             as Text
 import qualified Dhall
 import qualified Dhall.Core
 
-import qualified Dhall.Map as Map
-import qualified Dhall.Parser
+import qualified Dhall.Map             as Map
 import qualified Dhall.Pretty
-import qualified Dhall.Src
-import qualified Dhall.TypeCheck
 
-import Dhallia.Expr (Expr)
-import Dhallia.Cache
-import Dhallia.Cache.InMemory
+import           Dhallia.Cache
+import           Dhallia.Expr          (Expr)
 
 
 data API c =
@@ -49,14 +37,14 @@ data API c =
 
 
 data RawAPI c = RawAPI
-  { name         :: Text.Text
-  , inputType    :: Expr
+  { name       :: Text.Text
+  , inputType  :: Expr
     -- ^ A Dhall type
-  , outputType   :: Expr
+  , outputType :: Expr
     -- ^ A Dhall type
-  , toRequest    :: Expr
+  , toRequest  :: Expr
     -- ^ A Dhall function (input -> Request)
-  , cache        :: Maybe c
+  , cache      :: Maybe c
   } deriving (Eq, Show)
 
 
@@ -133,13 +121,18 @@ getAPIs makeCache e@(Dhall.Core.RecordLit rs) =
 
         return $
           Map.insert name
-          (Maybe.fromMaybe (error "api decoding error") (fmap Raw (getRaw cache) <|> fmap MapOut (getMapOut cache) <|> fmap  Merge (getMerge cache)))
+          (Maybe.fromMaybe (error "api decoding error")
+            (fmap Raw    (getRaw cache)    <|>
+             fmap MapIn  (getMapIn cache)  <|>
+             fmap MapOut (getMapOut cache) <|>
+             fmap Merge  (getMerge cache)
+            )
+          )
           acc
         where
           l fieldName  = Map.lookup fieldName e
 
           getRaw cache = do
-            -- maybeCache <- 
             RawAPI <$> pure name <*> l "inputType" <*> l "outputType" <*> l "toRequest" <*> pure cache
           getMapIn cache = do
             Dhall.Core.TextLit (Dhall.Core.Chunks [] parentName) <- l "parent"
@@ -184,10 +177,10 @@ getOutputType (MapOut MapOutAPI{outputType}) = outputType
 getOutputType (Merge  MergeAPI{outputType})  = outputType
 
 getCache :: API c -> Maybe c
-getCache (Raw    RawAPI{cache}) = cache
+getCache (Raw    RawAPI{cache})    = cache
 getCache (MapOut MapOutAPI{cache}) = cache
-getCache (MapIn MapInAPI{cache}) = cache
-getCache (Merge MergeAPI{cache}) = cache
+getCache (MapIn MapInAPI{cache})   = cache
+getCache (Merge MergeAPI{cache})   = cache
 
 showRequests :: API c -> Expr -> IO ()
 showRequests api' inputE = do

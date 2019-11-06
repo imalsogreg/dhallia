@@ -2,11 +2,10 @@
 
 module Dhallia.Cache where
 
-import qualified Data.Time as Time
 import qualified Dhall
-import GHC.Generics (Generic)
+import           GHC.Generics (Generic)
 
-import Dhallia.Expr
+import           Dhallia.Expr
 
 data Cache m = Cache
   { set      :: Expr -> Expr -> m ()
