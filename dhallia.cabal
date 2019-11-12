@@ -16,11 +16,13 @@ library
                     Dhallia.Expr
                     Dhallia.Interpreter.HTTPClient
                     Dhallia.Interpreter.Repl
+                    Dhallia.Prelude
   hs-source-dirs:   src
   build-depends:    base             >= 4.11 && < 4.13
                   , aeson
                   , algebraic-graphs
                   , bytestring
+                  , case-insensitive
                   , containers
                   , dhall            >= 1.26.0
                   , dhall-json

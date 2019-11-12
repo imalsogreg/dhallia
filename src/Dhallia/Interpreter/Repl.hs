@@ -21,6 +21,8 @@ import           Dhallia.API
 import           Dhallia.Cache
 import           Dhallia.Cache.InMemory
 import           Dhallia.Interpreter.HTTPClient
+import  Dhallia.Prelude (preludeContext, preludeNormalizer)
+import Dhallia.Expr
 
 
 data Env = Env
@@ -38,7 +40,7 @@ cmd c = do
   case Map.lookup (Text.pack apiName) apis of
     Nothing  -> error ("No such api: " <> apiName)
     Just api -> do
-      dhallInput <- IO.liftIO $ Dhall.inputExpr (Text.pack apiArgument)
+      dhallInput <- IO.liftIO $ inputExprWithM preludeNormalizer preludeContext (Text.pack apiArgument)
       Just r <- IO.liftIO $ Monad.runReaderT (runRequests api dhallInput) (manager env)
       IO.liftIO (print $ Dhall.prettyExpr r)
       return ()
@@ -56,10 +58,10 @@ options =
 loadAPIs :: [String] -> Repl ()
 loadAPIs [expr] = do
   apisRef <- Monad.asks apis
-  newAPIs <- IO.liftIO $ Dhall.inputExpr (Text.pack expr)
+  newAPIs <- IO.liftIO $ inputExprWithM preludeNormalizer preludeContext (Text.pack expr)
   newAPIs' <- IO.liftIO $ getAPIs makeInMemory newAPIs
   case newAPIs of
-    Dhall.RecordLit e -> IO.liftIO $ IORef.modifyIORef apisRef (<> newAPIs') >> putStrLn "Success"
+    Dhall.RecordLit e -> IO.liftIO $ IORef.modifyIORef apisRef (newAPIs' <>) >> putStrLn "Success"
 
 
 listAPIs :: [String] -> Repl ()

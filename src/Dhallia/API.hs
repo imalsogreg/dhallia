@@ -11,20 +11,23 @@
 module Dhallia.API where
 
 import qualified Algebra.Graph
-import           Algebra.Graph.ToGraph (topSort)
-import           Control.Applicative   ((<|>))
-import qualified Data.Foldable         as Foldable
-import qualified Data.Maybe            as Maybe
-import qualified Data.Set              as Set
-import qualified Data.Text             as Text
+import           Algebra.Graph.ToGraph  (topSort)
+import           Control.Applicative    ((<|>))
+import qualified Control.Monad.IO.Class as IO
+import qualified Data.Foldable          as Foldable
+import qualified Data.Maybe             as Maybe
+import qualified Data.Set               as Set
+import qualified Data.Text              as Text
+import           Data.Void              (Void)
 import qualified Dhall
 import qualified Dhall.Core
 
-import qualified Dhall.Map             as Map
+import qualified Dhall.Map              as Map
 import qualified Dhall.Pretty
 
 import           Dhallia.Cache
-import           Dhallia.Expr          (Expr)
+import           Dhallia.Prelude (preludeContext, preludeNormalizer)
+import           Dhallia.Expr           (Expr)
 
 
 data API c =
@@ -182,24 +185,28 @@ getCache (MapOut MapOutAPI{cache}) = cache
 getCache (MapIn MapInAPI{cache})   = cache
 getCache (Merge MergeAPI{cache})   = cache
 
-showRequests :: API c -> Expr -> IO ()
-showRequests api' inputE = do
+showRequests :: IO.MonadIO m => API c -> Expr -> m ()
+showRequests = showRequestsWith preludeNormalizer
+
+showRequestsWith :: (IO.MonadIO m) => Dhall.Core.NormalizerM m Void -> API c -> Expr -> m ()
+showRequestsWith n api' inputE = do
   case api' of
 
-    Raw RawAPI{toRequest} ->
-      print $ Dhall.Pretty.prettyExpr $ Dhall.Core.normalize (Dhall.Core.App toRequest inputE)
+    Raw RawAPI{toRequest} -> do
+      req <- Dhall.Core.normalizeWithM n (Dhall.Core.App toRequest inputE)
+      IO.liftIO . print . Dhall.Pretty.prettyExpr $ req
 
-    MapIn MapInAPI{f,parent} ->
-      let requestInput = Dhall.Core.normalize (Dhall.Core.App f inputE)
-      in  showRequests parent requestInput
+    MapIn MapInAPI{f,parent} -> do
+      requestInput <- Dhall.Core.normalizeWithM n (Dhall.Core.App f inputE)
+      showRequestsWith n parent requestInput
 
     MapOut MapOutAPI{parent} ->
-      showRequests parent inputE
+      showRequestsWith n parent inputE
 
     Merge api -> do
       let (inputA, inputB) = apInputs inputE
-      showRequests (parentA api) inputA
-      showRequests (parentB api) inputB
+      showRequestsWith n (parentA api) inputA
+      showRequestsWith n (parentB api) inputB
 
 
 apInputs :: Expr -> (Expr, Expr)

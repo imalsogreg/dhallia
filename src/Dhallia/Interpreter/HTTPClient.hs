@@ -2,6 +2,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TypeApplications      #-}
 
@@ -13,10 +14,12 @@ import qualified Control.Monad.IO.Class  as IO
 import           Control.Monad.Reader    (ReaderT, ask, runReaderT)
 import qualified Data.Aeson              as Aeson
 import qualified Data.ByteString.Lazy    as LazyByteString
+import qualified Data.CaseInsensitive    as CI
 import qualified Data.Text               as Text
 import qualified Data.Text.Encoding      as Text
+import           Data.Void               (Void)
 import qualified Dhall
-import qualified Dhall.Core
+import qualified Dhall.Core              as Dhall
 import qualified Dhall.JSONToDhall
 import qualified Dhall.Map               as Map
 import qualified Dhall.Pretty            as Pretty
@@ -28,6 +31,7 @@ import           Dhallia.API
 import           Dhallia.Cache
 import           Dhallia.Cache.InMemory
 import           Dhallia.Expr
+import           Dhallia.Prelude         (preludeContext, preludeNormalizer)
 
 request :: Dhall.Type Request
 request = Dhall.record $
@@ -36,17 +40,23 @@ request = Dhall.record $
           <*> Dhall.field "pathParts" (Dhall.list Dhall.strictText)
           <*> Dhall.field "queryParams" (Dhall.list queryParam)
           <*> Dhall.field "requestBody" (Dhall.maybe Dhall.strictText)
+          <*> Dhall.field "headers" (Dhall.list requestHeader)
   where
     queryParam :: Dhall.Type QueryParam
     queryParam = Dhall.record $
-      QueryParam <$> Dhall.field "key" Dhall.strictText
+      QueryParam <$> Dhall.field "key"   Dhall.strictText
                  <*> Dhall.field "value" Dhall.strictText
-
+    requestHeader :: Dhall.Type Header
+    requestHeader = Dhall.record $
+      Header <$> Dhall.field "key"   Dhall.strictText
+             <*> Dhall.field "value" Dhall.strictText
 
 
 runRequests :: API (Cache IO) -> Expr -> ReaderT HTTP.Manager IO (Maybe Expr)
-runRequests api' inputE = do
- -- maybe (return ()) (\Cache{stats} -> IO.liftIO (stats >>= print)) (getCache api')
+runRequests = runRequestsWith preludeNormalizer
+
+runRequestsWith :: Dhall.NormalizerM IO Void -> API (Cache IO) -> Expr -> ReaderT HTTP.Manager IO (Maybe Expr)
+runRequestsWith n api' inputE = do
  cacheResult <- maybe (return Nothing)
                       (\Cache{get} -> IO.liftIO (get inputE))
                       (getCache api')
@@ -57,13 +67,14 @@ runRequests api' inputE = do
     r <- case api' of
 
       Raw api@RawAPI{outputType} -> do
-        let req  = Dhall.Core.normalize (Dhall.Core.App (toRequest api) inputE)
+        req     <- IO.liftIO $ Dhall.normalizeWithM n (Dhall.App (toRequest api) inputE)
         parsed' <- case (Dhall.rawInput @Maybe request req) of
                      Just req -> pure req
                      Nothing  -> error "failed to decode request"
 
         httpResp <- runHTTP parsed'
 
+        -- IO.liftIO $ print (body httpResp)
         let responseJSON = case Aeson.decode (body httpResp) of
               Nothing    -> error "response body was not valid JSON"
               Just jsVal -> jsVal :: Aeson.Value
@@ -75,20 +86,23 @@ runRequests api' inputE = do
         return $ Just dhallResp
 
       MapIn api@MapInAPI{f,parent} -> do
-        let requestInput = Dhall.Core.normalize (Dhall.Core.App f inputE)
-        runRequests parent requestInput
+        requestInput <- IO.liftIO $ Dhall.normalizeWithM n (Dhall.App f inputE)
+        runRequestsWith n parent requestInput
 
       MapOut api@MapOutAPI{f,parent} -> do
-        resp <- runRequests parent inputE
-        return $ fmap (Dhall.Core.normalize . Dhall.Core.App f) resp
+        resp <- runRequestsWith n parent inputE
+        case resp of
+          Nothing -> return Nothing
+          Just r  -> fmap Just $ IO.liftIO $ Dhall.normalizeWithM n $ Dhall.App f r
 
       Merge api@MergeAPI{f,parentA,parentB} -> do
         let (inputA, inputB) = apInputs inputE
-        Just respA <- runRequests parentA inputA
-        Just respB <- runRequests parentB inputB
-        let dhallResp = Dhall.Core.normalize (Dhall.Core.App (Dhall.Core.App f respA) respB)
+        Just respA <- runRequestsWith n parentA inputA
+        Just respB <- runRequestsWith n parentB inputB
+        dhallResp <- IO.liftIO $ Dhall.normalizeWithM n (Dhall.App (Dhall.App f respA) respB)
         case dhallResp of
-          Dhall.Core.Some resp -> return $ Just resp
+          Dhall.Some resp -> return $ Just resp
+
     maybe (return ())
           (\(Cache{..}, val) -> IO.liftIO (set inputE val))
           ((,) <$> getCache api' <*> r)
@@ -102,6 +116,13 @@ data QueryParam = QueryParam
 
 instance Dhall.FromDhall QueryParam
 
+data Header = Header
+  { key   :: Text.Text
+  , value :: Text.Text
+  } deriving (Eq, Show, Generic)
+
+instance Dhall.FromDhall Header
+
 
 data Request = Request
  { baseUrl     :: Text.Text
@@ -109,6 +130,7 @@ data Request = Request
  , pathParts   :: [Text.Text]
  , queryParams :: [QueryParam]
  , requestBody :: Maybe Text.Text
+ , headers     :: [Header]
  } deriving (Eq, Show, Generic)
 
 
@@ -139,16 +161,19 @@ runHTTP Request{..} = do
             else "?" <> Text.intercalate "&" (fmap (\(QueryParam k v) -> k <> "=" <> v) queryParams)
 
       initReq <- HTTP.parseRequest (Text.unpack url)
+      IO.liftIO $ print url
       return $ initReq
         { HTTP.method = Text.encodeUtf8 verb
         , HTTP.requestBody = maybe "" (HTTP.RequestBodyBS .Text.encodeUtf8) requestBody
+        , HTTP.requestHeaders =
+            fmap (\(Header k v) -> (CI.mk (Text.encodeUtf8 k), Text.encodeUtf8 v)) headers
         }
 
 
 test :: IO ()
 test = do
   mgr <- HTTPS.newTlsManager
-  x <- Dhall.inputExpr "./config/api.dhall"
+  x <- inputExprWithM preludeNormalizer preludeContext "./config/api.dhall"
   let deps = dependencyGraph x
   Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
 
@@ -163,7 +188,7 @@ test = do
 test2 :: IO ()
 test2 = do
   mgr <- HTTPS.newTlsManager
-  x <- Dhall.inputExpr "./examples/cat-facts.dhall"
+  x <- inputExprWithM preludeNormalizer preludeContext "./examples/cat-facts.dhall"
   let deps = dependencyGraph x
   Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
   exampleInput <- Dhall.inputExpr "{ _id = \"5d3e2191484b54001508b0df\" }"
@@ -200,3 +225,32 @@ test4 = do
     Just api -> runReaderT (runRequests api exampleInput) mgr
     Nothing  -> error "API lookup error"
   maybe (error "response error") (return . show . Pretty.prettyExpr) r
+
+test5 :: IO String
+test5 = do
+  mgr <- HTTPS.newTlsManager
+  x <- Dhall.inputExpr "../upstream/DFE_v8.dhall"
+  let deps = dependencyGraph x
+  Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
+  exampleInput <- Dhall.inputExpr "{ location = \"3801,2042,2224,758,254,1765,1536,1339,2754,2239,1354,1204,2739,83,2187,2426,1459,875,80,2243,770,1766,2237,1116,1368,1922,1962,1836,1430,2438,801,1837,1523,1531,1490,2093,1979,1953,1770,2112,1852,2429,2278,2342,1981,176,2572,2425,1785,1514,1061,2334,2220,2190,2467,1506,771,219,2374,2803,824\", tcin = \"75665658\", partial = True, horizon = \"5d1\" }"
+  apis <- getAPIs (makeInMemory @IO) x
+  r <- case Map.lookup "dfe_v8_stage" apis of
+    Just api ->  do
+      showRequests api exampleInput
+      runReaderT (runRequests api exampleInput) mgr
+    Nothing  -> error "API lookup error"
+  -- maybe (error "response error") (return . show . Pretty.prettyExpr) r
+  return "hi"
+
+test6 :: IO ()
+test6 = do
+  mgr <- HTTPS.newTlsManager
+  x <- inputExprWithM preludeNormalizer preludeContext "./examples/cat-facts.dhall"
+  let deps = dependencyGraph x
+  Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
+  exampleInput <- Dhall.inputExpr "\"5d3e2191484b54001508b0df\""
+  apis <- getAPIs makeInMemory x
+  r <- case Map.lookup "cat-fact-easter-egg" apis of
+    Just api -> runReaderT (runRequests api exampleInput) mgr
+    Nothing  -> error "API lookup error"
+  maybe (error "response error") (print . Pretty.prettyExpr) r
