@@ -32,8 +32,8 @@ let ExampleOutput = { greeting : Text }
 in {
 rawExample =
   { inputType  = ExampleInput,
-    outputType = { greeting: Text },
-    toRequest  = \(input: ExampleInput) ->
+    outputType = { greeting : Text },
+    toRequest  = \(input : ExampleInput) ->
                    Req.addPathPart (input.name) Req.default
   }
 }
@@ -62,7 +62,7 @@ in {
 fmapExample =
   { parent     = "rawExample",
     outputType = MyOutput,
-    f          = \(i: ParentOutput) ->
+    f          = \(i : ParentOutput) ->
                    { extended = "${i.greeting}. How are you?" }
   }
 }
@@ -77,10 +77,10 @@ let Req = ./Request.dhall
 in {
 apExample =
   { parentA    = "rawExample",
-    parendB    = "fmapExample",
+    parentB    = "fmapExample",
     outputType = { compositeGreeting : Text },
-    f          = \(a: { greeting : Text }) ->
-                 \(b: { extended : Text }) ->
+    f          = \(a : { greeting : Text }) ->
+                 \(b : { extended : Text }) ->
                    { compositeGreeting =
                      "We say to you, ${a.greeting} and ${b.extended}!"
                    }
