@@ -17,11 +17,14 @@ allCabalHashesOverlay = self: super: {
    };
   };
 
-  nixpkgs =
-    import
-    (builtins.fetchTarball "https://github.com/nixos/nixpkgs/archive/${nixpkgs_rev}.tar.gz") {
-    overlays = [ allCabalHashesOverlay ];
-    };
+  # nixpkgs =
+  #   import
+  #   (builtins.fetchTarball "https://github.com/nixos/nixpkgs/archive/${nixpkgs_rev}.tar.gz") {
+  #   overlays = [ allCabalHashesOverlay ];
+  #   };
+
+  nixpkgs = import  <nixpkgs> { overlays = [allCabalHashesOverlay]; };
+
   inherit (nixpkgs) pkgs;
 
   dhallSrc = pkgs.fetchFromGitHub {

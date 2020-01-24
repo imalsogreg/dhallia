@@ -15,6 +15,7 @@ import           Control.Monad.Reader    (ReaderT, ask, runReaderT)
 import qualified Data.Aeson              as Aeson
 import qualified Data.ByteString.Lazy    as LazyByteString
 import qualified Data.CaseInsensitive    as CI
+import           Data.Proxy              (Proxy (..))
 import qualified Data.Text               as Text
 import qualified Data.Text.Encoding      as Text
 import           Data.Void               (Void)
@@ -31,7 +32,7 @@ import           Dhallia.API
 import           Dhallia.Cache
 import           Dhallia.Cache.InMemory
 import           Dhallia.Expr
-import           Dhallia.Prelude         (preludeContext, preludeNormalizer)
+import           Dhallia.Prelude         (inputExpr, preludeNormalizer)
 
 request :: Dhall.Type Request
 request = Dhall.record $
@@ -173,7 +174,7 @@ runHTTP Request{..} = do
 test :: IO ()
 test = do
   mgr <- HTTPS.newTlsManager
-  x <- inputExprWithM preludeNormalizer preludeContext "./config/api.dhall"
+  x <- inputExpr "./config/api.dhall"
   let deps = dependencyGraph x
   Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
 
@@ -188,7 +189,7 @@ test = do
 test2 :: IO ()
 test2 = do
   mgr <- HTTPS.newTlsManager
-  x <- inputExprWithM preludeNormalizer preludeContext "./examples/cat-facts.dhall"
+  x <- inputExpr "./examples/cat-facts.dhall"
   let deps = dependencyGraph x
   Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
   exampleInput <- Dhall.inputExpr "{ _id = \"5d3e2191484b54001508b0df\" }"
@@ -202,7 +203,7 @@ test2 = do
 test3 :: IO ()
 test3 = do
   mgr <- HTTPS.newTlsManager
-  x <- Dhall.inputExpr "./examples/metaweather.dhall"
+  x <- inputExpr "./examples/metaweather.dhall"
   let deps = dependencyGraph x
   Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
   exampleInput <- Dhall.inputExpr "\"san\""
@@ -216,7 +217,7 @@ test3 = do
 test4 :: IO String
 test4 = do
   mgr <- HTTPS.newTlsManager
-  x <- Dhall.inputExpr "./examples/cat-facts.dhall"
+  x <- inputExpr "./examples/cat-facts.dhall"
   let deps = dependencyGraph x
   Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
   exampleInput <- Dhall.inputExpr "{}"
@@ -229,7 +230,7 @@ test4 = do
 test5 :: IO String
 test5 = do
   mgr <- HTTPS.newTlsManager
-  x <- Dhall.inputExpr "../upstream/DFE_v8.dhall"
+  x <- inputExpr "../upstream/DFE_v8.dhall"
   let deps = dependencyGraph x
   Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
   exampleInput <- Dhall.inputExpr "{ location = \"3801,2042,2224,758,254,1765,1536,1339,2754,2239,1354,1204,2739,83,2187,2426,1459,875,80,2243,770,1766,2237,1116,1368,1922,1962,1836,1430,2438,801,1837,1523,1531,1490,2093,1979,1953,1770,2112,1852,2429,2278,2342,1981,176,2572,2425,1785,1514,1061,2334,2220,2190,2467,1506,771,219,2374,2803,824\", tcin = \"75665658\", partial = True, horizon = \"5d1\" }"
@@ -245,7 +246,7 @@ test5 = do
 test6 :: IO ()
 test6 = do
   mgr <- HTTPS.newTlsManager
-  x <- inputExprWithM preludeNormalizer preludeContext "./examples/cat-facts.dhall"
+  x <- inputExpr "./examples/cat-facts.dhall"
   let deps = dependencyGraph x
   Monad.when (Graph.topSort deps == Nothing) (error  "found a cycle")
   exampleInput <- Dhall.inputExpr "\"5d3e2191484b54001508b0df\""
