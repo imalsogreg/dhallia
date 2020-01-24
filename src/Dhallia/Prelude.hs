@@ -1,7 +1,7 @@
 -- | Extra values useful for transforming API data
 {-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE OverloadedLists     #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -22,23 +22,30 @@ import qualified Dhall.Context          as Dhall
 import qualified Dhall.Core             as Dhall
 import qualified Dhall.Map
 import qualified Dhall.Src              as Dhall
+import qualified Lens.Family            as Lens
 
 import           Dhallia.Expr
 
 inputExpr :: forall m. IO.MonadIO m => Text.Text -> m (Dhall.Expr Dhall.Src Void)
-inputExpr txt = inputExprWithM preludeNormalizer (preludeContext (Proxy @m)) txt
+inputExpr txt = IO.liftIO $ Dhall.inputExprWithSettings settings txt
+  where
+    settings   = transform Dhall.defaultInputSettings
+    transform  =
+        Lens.set Dhall.normalizer (Just (Dhall.ReifiedNormalizer normalizer))
+      . Lens.set Dhall.startingContext preludeContext
+    normalizer = preludeNormalizer
 
-preludeContext :: forall m.Monad m => Proxy m -> Dhall.Context Expr
-preludeContext _ =
+preludeContext :: Dhall.Context Expr
+preludeContext  =
   List.foldl' (\acc (k,v) -> Dhall.insert k v acc) Dhall.empty preludeTypes
   where
     preludeTypes :: [(Dhall.Text, Dhall.Expr Dhall.Src Void)]
     preludeTypes =
       (("day", day) :) $
-      (\(DhalliaValue{..}) -> (df_name, df_type)) <$> [ parseDay @m, stringEquality ]
+      (\(DhalliaValue{..}) -> (df_name, df_type)) <$> [ parseDay, stringEquality ]
 
 
-preludeNormalizer :: (Monad m, Eq a) => Dhall.NormalizerM m a
+preludeNormalizer :: Eq a => Dhall.Normalizer a
 preludeNormalizer e0 = run [parseDay, stringEquality]
   where
     run []     = return Nothing
@@ -46,17 +53,17 @@ preludeNormalizer e0 = run [parseDay, stringEquality]
       r <- df_norm x e0
       case r of
         Nothing  -> run xs
-        Just res -> return (Just res)
+        Just res -> return $ Just res
 
 
-data DhalliaValue m a = DhalliaValue
+data DhalliaValue a = DhalliaValue
   { df_type :: Dhall.Expr Dhall.Src Void
-  , df_norm :: Dhall.NormalizerM m a
+  , df_norm :: Dhall.Normalizer a
   , df_name :: Dhall.Text
   }
 
 
-stringEquality :: Monad m => DhalliaValue m a
+stringEquality :: DhalliaValue a
 stringEquality = DhalliaValue
   { df_type = Dhall.Pi "_" Dhall.Text (Dhall.Pi "_" Dhall.Text Dhall.Bool)
   , df_name = "Text/equal"
@@ -77,7 +84,7 @@ day = Dhall.Record
     , ("day",   Dhall.Integer)
     ])
 
-parseDay :: Monad m => DhalliaValue m a
+parseDay :: DhalliaValue a
 parseDay = DhalliaValue
   { df_type = Dhall.Pi "_" Dhall.Text day
   , df_name = "Day/parse"

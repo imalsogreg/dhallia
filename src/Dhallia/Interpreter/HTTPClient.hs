@@ -34,6 +34,7 @@ import           Dhallia.Cache.InMemory
 import           Dhallia.Expr
 import           Dhallia.Prelude         (inputExpr, preludeNormalizer)
 
+
 request :: Dhall.Type Request
 request = Dhall.record $
   Request <$> Dhall.field "baseUrl" Dhall.strictText
@@ -56,7 +57,7 @@ request = Dhall.record $
 runRequests :: API (Cache IO) -> Expr -> ReaderT HTTP.Manager IO (Maybe Expr)
 runRequests = runRequestsWith preludeNormalizer
 
-runRequestsWith :: Dhall.NormalizerM IO Void -> API (Cache IO) -> Expr -> ReaderT HTTP.Manager IO (Maybe Expr)
+runRequestsWith :: Dhall.Normalizer Void -> API (Cache IO) -> Expr -> ReaderT HTTP.Manager IO (Maybe Expr)
 runRequestsWith n api' inputE = do
  cacheResult <- maybe (return Nothing)
                       (\Cache{get} -> IO.liftIO (get inputE))
@@ -65,10 +66,11 @@ runRequestsWith n api' inputE = do
    Just r  -> IO.liftIO (putStrLn "Cache Hit" >> return (Just r))
    Nothing -> do
     IO.liftIO (putStrLn "Cache Miss")
+    let n' = Just $ Dhall.ReifiedNormalizer n
     r <- case api' of
 
       Raw api@RawAPI{outputType} -> do
-        req     <- IO.liftIO $ Dhall.normalizeWithM n (Dhall.App (toRequest api) inputE)
+        let req = Dhall.normalizeWith n' (Dhall.App (toRequest api) inputE)
         parsed' <- case (Dhall.rawInput @Maybe request req) of
                      Just req -> pure req
                      Nothing  -> error "failed to decode request"
@@ -87,20 +89,20 @@ runRequestsWith n api' inputE = do
         return $ Just dhallResp
 
       MapIn api@MapInAPI{f,parent} -> do
-        requestInput <- IO.liftIO $ Dhall.normalizeWithM n (Dhall.App f inputE)
+        let requestInput = Dhall.normalizeWith n' (Dhall.App f inputE)
         runRequestsWith n parent requestInput
 
       MapOut api@MapOutAPI{f,parent} -> do
         resp <- runRequestsWith n parent inputE
         case resp of
           Nothing -> return Nothing
-          Just r  -> fmap Just $ IO.liftIO $ Dhall.normalizeWithM n $ Dhall.App f r
+          Just r  -> return $ Just $ Dhall.normalizeWith n' $ Dhall.App f r
 
       Merge api@MergeAPI{f,parentA,parentB} -> do
         let (inputA, inputB) = apInputs inputE
         Just respA <- runRequestsWith n parentA inputA
         Just respB <- runRequestsWith n parentB inputB
-        dhallResp <- IO.liftIO $ Dhall.normalizeWithM n (Dhall.App (Dhall.App f respA) respB)
+        let dhallResp = Dhall.normalizeWith n' (Dhall.App (Dhall.App f respA) respB)
         case dhallResp of
           Dhall.Some resp -> return $ Just resp
 

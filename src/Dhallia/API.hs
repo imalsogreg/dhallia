@@ -202,16 +202,17 @@ getCache (Merge MergeAPI{cache})   = cache
 showRequests :: IO.MonadIO m => API c -> Expr -> m ()
 showRequests = showRequestsWith preludeNormalizer
 
-showRequestsWith :: (IO.MonadIO m) => Dhall.Core.NormalizerM m Void -> API c -> Expr -> m ()
+showRequestsWith :: (IO.MonadIO m) => Dhall.Core.Normalizer Void -> API c -> Expr -> m ()
 showRequestsWith n api' inputE = do
+  let n' = Just $ Dhall.Core.ReifiedNormalizer n
   case api' of
 
     Raw RawAPI{toRequest} -> do
-      req <- Dhall.Core.normalizeWithM n (Dhall.Core.App toRequest inputE)
+      let req = Dhall.Core.normalizeWith n' (Dhall.Core.App toRequest inputE)
       IO.liftIO . print . Dhall.Pretty.prettyExpr $ req
 
     MapIn MapInAPI{f,parent} -> do
-      requestInput <- Dhall.Core.normalizeWithM n (Dhall.Core.App f inputE)
+      let requestInput = Dhall.Core.normalizeWith n' (Dhall.Core.App f inputE)
       showRequestsWith n parent requestInput
 
     MapOut MapOutAPI{parent} ->
