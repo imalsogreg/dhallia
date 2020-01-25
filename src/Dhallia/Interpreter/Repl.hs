@@ -22,12 +22,13 @@ import           Dhallia.Cache
 import           Dhallia.Cache.InMemory
 import           Dhallia.Interpreter.HTTPClient
 import  Dhallia.Prelude (inputExpr)
-import Dhallia.Expr
+import           Dhallia.Expr (Expr)
 
 
 data Env = Env
-  { manager :: HTTP.Manager
-  , apis    :: IORef.IORef (Map.Map Text.Text (API (Cache IO)))
+  { manager       :: HTTP.Manager
+  , apis          :: IORef.IORef (Map.Map Text.Text (API (Cache IO)))
+  , localBindings :: IORef.IORef (Map.Map Text.Text Expr)
     -- cache :: DhalliaCache -- TODO
   }
 
@@ -50,6 +51,8 @@ cmd c = do
 options :: [(String, [String] -> Repl ())]
 options =
   [("load", loadAPIs)
+  ,("eval", evalExpr)
+  ,("bind", addBinding)
   ,("list", listAPIs)
   ,("quit", error "Bye")
   ]
@@ -57,8 +60,8 @@ options =
 
 loadAPIs :: [String] -> Repl ()
 loadAPIs [expr] = do
-  apisRef <- Monad.asks apis
-  newAPIs <- IO.liftIO $ inputExpr (Text.pack expr)
+  apisRef  <- Monad.asks apis
+  newAPIs  <- IO.liftIO $ inputExpr (Text.pack expr)
   newAPIs' <- IO.liftIO $ getAPIs makeInMemory newAPIs
   case newAPIs of
     Dhall.RecordLit e -> IO.liftIO $ IORef.modifyIORef apisRef (newAPIs' <>) >> putStrLn "Success"
@@ -71,6 +74,32 @@ listAPIs [] = do
   IO.liftIO $ mapM_ (putStrLn . Text.unpack) (Map.keys apis)
 
 
+prettyBindings :: Map.Map Dhall.Text Expr -> Dhall.Text
+prettyBindings bindings | List.null (Map.toList bindings) = ""
+prettyBindings bindings = Text.unlines (bindingLines <> ["in\n"])
+  where
+    bindingLines      = map bindingLine (Map.toList bindings)
+    bindingLine (k,v) = Text.unwords ["let", k, "=", Text.pack (show (Dhall.prettyExpr v))]
+
+
+evalExpr :: [String] -> Repl ()
+evalExpr exprText = do
+  bindings <- Monad.asks localBindings >>= IO.liftIO . IORef.readIORef
+  IO.liftIO $ print $ prettyBindings bindings
+  expr <- inputExpr $ prettyBindings bindings <> Text.pack (unwords exprText)
+  IO.liftIO (print $ Dhall.prettyExpr expr)
+
+
+addBinding :: [String] -> Repl ()
+addBinding [] = IO.liftIO $ putStrLn "usage: `:bind x { xFoo = 10, myBar = True }`"
+addBinding (v:exprText) = do
+  bindings <- Monad.asks localBindings
+  bindingsText <- prettyBindings <$> IO.liftIO (IORef.readIORef bindings)
+  IO.liftIO $ print bindingsText
+  expr <- inputExpr $ bindingsText <> Text.pack (unwords exprText)
+  IO.liftIO $ IORef.modifyIORef bindings (Map.insert (Text.pack v) expr)
+
+
 completer :: R.CompleterStyle (Monad.ReaderT Env IO)
 completer = R.Cursor $ \beforeWord (Text.pack -> word) -> do
 
@@ -78,7 +107,7 @@ completer = R.Cursor $ \beforeWord (Text.pack -> word) -> do
 
     -- Handle ":some-command"
     ("", Just _) -> return $
-      completeFrom True word [":load", ":list", ":quit"]
+      completeFrom True word (map (Text.pack . (':':) . fst) options) -- [":load", ":list", ":quit"]
 
     -- Handle "some-api"
     _ -> do
@@ -103,10 +132,10 @@ type Repl a = R.HaskelineT (Monad.ReaderT Env IO) a
 
 repl :: IO ()
 repl = do
-  mgr  <- HTTP.newTlsManager
-  apis <- IORef.newIORef mempty
+  mgr   <- HTTP.newTlsManager
+  apis  <- IORef.newIORef mempty
+  binds <- IORef.newIORef mempty
   Monad.runReaderT
     (R.evalRepl
       (pure "❀> ") cmd options (Just ':') completer ini
-    ) (Env mgr apis)
-
+    ) (Env mgr apis binds)
