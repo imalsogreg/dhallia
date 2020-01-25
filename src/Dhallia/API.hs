@@ -1,3 +1,18 @@
+--------------------------------------------------------------------------------
+-- |
+-- Module      : Dhallia.API
+-- Description : The encoding of APIs in dhall syntax-}
+-- Copyright   : (c) Greg Hale 2019
+-- License     : BSD-3-Clause
+-- Maintainer  : imalsogreg@gmail.com
+-- Stability   : experimental
+-- Portability : Posix
+
+-- API definitions are specified in Dhall (with some dhallia extensions).
+-- This module defines the types of APIs that can be defined (Raw, MapIn, Merge, etc),
+-- and the method for decoding them from Dhall into Haskell.
+--------------------------------------------------------------------------------
+
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
@@ -26,8 +41,8 @@ import qualified Dhall.Map              as Map
 import qualified Dhall.Pretty
 
 import           Dhallia.Cache
-import           Dhallia.Prelude (preludeContext, preludeNormalizer)
 import           Dhallia.Expr           (Expr)
+import           Dhallia.Prelude        (preludeContext, preludeNormalizer)
 
 
 data API c =
@@ -36,7 +51,6 @@ data API c =
   | MapOut (MapOutAPI c)
   | Merge  (MergeAPI c)
   deriving (Eq, Show)
-
 
 
 data RawAPI c = RawAPI
@@ -188,16 +202,17 @@ getCache (Merge MergeAPI{cache})   = cache
 showRequests :: IO.MonadIO m => API c -> Expr -> m ()
 showRequests = showRequestsWith preludeNormalizer
 
-showRequestsWith :: (IO.MonadIO m) => Dhall.Core.NormalizerM m Void -> API c -> Expr -> m ()
+showRequestsWith :: (IO.MonadIO m) => Dhall.Core.Normalizer Void -> API c -> Expr -> m ()
 showRequestsWith n api' inputE = do
+  let n' = Just $ Dhall.Core.ReifiedNormalizer n
   case api' of
 
     Raw RawAPI{toRequest} -> do
-      req <- Dhall.Core.normalizeWithM n (Dhall.Core.App toRequest inputE)
+      let req = Dhall.Core.normalizeWith n' (Dhall.Core.App toRequest inputE)
       IO.liftIO . print . Dhall.Pretty.prettyExpr $ req
 
     MapIn MapInAPI{f,parent} -> do
-      requestInput <- Dhall.Core.normalizeWithM n (Dhall.Core.App f inputE)
+      let requestInput = Dhall.Core.normalizeWith n' (Dhall.Core.App f inputE)
       showRequestsWith n parent requestInput
 
     MapOut MapOutAPI{parent} ->
