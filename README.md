@@ -1,14 +1,37 @@
 # Dhallia
 
-A way to compose HTTP APIs
+An API Gateway configured in Dhall.
 
+Dhallia lets you use Dhall types and expressions to wrap and compose underlying
+APIs. Run-time type information and the self-contained nature of Dhall
+expressions makes it easy to explore and distribute APIs
 
-## Stability
+## Stability & Features
 
-Nowhere close. This is just an experiment. The main point of the
-repository is to illustrate the inductive API concept and get
-feedback on it. Nice implementation could come later.
+Nowhere close to usable. This is just an experiment. The main point of the
+repository is to illustrate the inductive API concept and get feedback on it.
+Nice implementation could come later.
 
+ - [x] Composable REST APIs
+ - [ ] Composable websocket APIs
+ - [x] Client REPL
+ - [ ] Circuit breaking
+ - [ ] Dry-run mode
+ - [x] Configurable caching
+ - [ ] Configurable logging & metrics
+ - [ ] Documentation
+ - [ ] Admin UI
+ - [ ] Authentication
+ - [ ] Authorization
+ - [ ] 
+ 
+## Code organization
+
+### Core library: src
+
+ - Logic for interpreting dhall API specifications
+ - Typechecking API compositions
+ - Core implementations of application logic
 
 ## Inductive APIs
 
@@ -96,18 +119,6 @@ Right now the only way to use them is to parse the API definitions,
 then construct inputs as `dhall` values in Haskell, and call the
 [runRequests](https://github.com/imalsogreg/dhallia/blob/master/src/Dhallia/Interpreter/HTTPClient/API.hs#L47)
 function.
-
-### Runtime features
-
- - [x] Extract basic API data from `.dhall` configuration
- - [x] Execute requests against raw and composite APIs within Haskell
- - [x] Provide a `haskline` REPL for applying APIs to their arguments
- - [ ] Use the APIs type information to drive autocompletion/hinting
- - [x] Allow specification of caching rules in raw apis
- - [ ] Caching inference for composite APIs
- - [x] Cache API responses in some key-value store
- - [ ] UI for inspecting/invalidating cache lines
- - [ ] Dry-run mode for printing raw HTTP calls behind a composite API call
 
 
 ## Why?
